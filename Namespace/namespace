@@ -1,5 +1,6 @@
 **Namespace**
-A namespace is like a folder or a container that organizes and sperate resource within a cluster. It allows you to group related resources (like pod, service and deployments) and manage them independently .
+A namespace is like a folder or a container that organizes and sperate resource within a cluster. It allows you to group related resources (like pod, service and deployments) 
+and manage them independently .
 
 Why Use namespaces?
 	Isolation: Keep different environments (e.g. , dev, test, prod) separate 	within the same cluster. 
@@ -17,7 +18,8 @@ Default: K8s includes the namespace so that you can start using your new cluster
 kube-node-lease
 This namespace holds Lease objects associated with each node. Node leases allow the kubelet to send heartbeats so that the control plane can detect node failure.
 kube-public
-This namespace is readable by all clients (including those not authenticated). This namespace is mostly reserved for cluster usage, in case that some resources should be visible and readable publicly throughout the whole cluster. The public aspect of this namespace is only a convention, not a requirement.
+This namespace is readable by all clients (including those not authenticated). This namespace is mostly reserved for cluster usage, in case that some resources should be 
+visible and readable publicly throughout the whole cluster. The public aspect of this namespace is only a convention, not a requirement.
 kube-system
 The namespace for objects created by the Kubernetes system
 
