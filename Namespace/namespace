@@ -1,0 +1,68 @@
+**Namespace**
+A namespace is like a folder or a container that organizes and sperate resource within a cluster. It allows you to group related resources (like pod, service and deployments) and manage them independently .
+
+Why Use namespaces?
+	Isolation: Keep different environments (e.g. , dev, test, prod) separate 	within the same cluster. 
+Resource Quotas: Allocate specific amounts of CPU, memory, or storage to a namespace to prevent one team or application from consuming all resources.
+Access Control: Apply permissions and policies to specific namespaces to control who can access or modify resources.
+
+Real-world Example
+•	Think of a Kubernetes cluster as a library.
+•	Each namespace is like a section in the library (e.g., Fiction, Science, History).
+•	Within each section, you organize books (resources like pods and services) specific to that topic.
+•	You can manage or read books in one section without interfering with books in another.
+
+Kubernetes starts with four initial namespace:
+Default: K8s includes the namespace so that you can start using your new cluster without first creating a namespace. 
+kube-node-lease
+This namespace holds Lease objects associated with each node. Node leases allow the kubelet to send heartbeats so that the control plane can detect node failure.
+kube-public
+This namespace is readable by all clients (including those not authenticated). This namespace is mostly reserved for cluster usage, in case that some resources should be visible and readable publicly throughout the whole cluster. The public aspect of this namespace is only a convention, not a requirement.
+kube-system
+The namespace for objects created by the Kubernetes system
+
+To see which Kubernetes resources are and aren't in a namespace:
+# In a namespace
+kubectl api-resources --namespaced=true
+
+# Not in a namespace
+kubectl api-resources --namespaced=false
+
+
+Working with Namespaces
+You can list the current namespaces in a cluster using:
+kubectl get namespace
+OR 
+kubectl get ns 
+NAME              STATUS   AGE
+default           Active   1d
+kube-node-lease   Active   1d
+kube-public       Active   1d
+kube-system       Active   1d
+
+Create a new YAML file called my-namespace.yaml with the contents:
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: <insert-namespace-name-here>
+
+Then run:
+kubectl create -f ./my-namespace.yaml
+Alternatively, you can create namespace using below command:
+kubectl create namespace <insert-namespace-name-here>
+
+You can permanently save the namespace for all subsequent kubectl commands in that context.
+kubectl config set-context --current --namespace=prod 
+Validate it 
+kubectl config view --minify | grep namespace:
+
+To set the namespace for a current request, use the --namespace flag.
+For example:
+kubectl run <<podName>> --image=nignx –namespacer=<<insert-namespace-here>>
+kubectl get pods –namespace=<insert-namespace-name-here>>
+
+Get detailed information with:
+kubectl describe namespaces <name>
+
+To be sure things are right, list all of the namespaces in our cluster.
+kubectl get namespaces --show-labels
