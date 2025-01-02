@@ -1,0 +1,146 @@
+**Rescource Quotas** 
+
+When several users or team share a clusture with a fixed number of nodes, there is concern that one team cloud use more than its fair share of resources. 
+In Kubernetes, a resource quota is like a limit or budget set for how much of the cluster's resources (CPU, memory, storage, etc.) a namespace can use. 
+It ensures fair resource usage and prevents one team or application from using up everything.
+
+Why Use Resource Quotas?
+1.	Fair Sharing: Prevents one namespace from consuming all the resources, leaving nothing for others.
+2.	Control Costs: Limits resource usage, especially in shared clusters.
+3.	Stability: Avoids overloading the cluster, keeping it stable.
+
+How Does It Work?
+•	You define a resource quota in a YAML file and apply it to a namespace.
+•	Kubernetes tracks the resource usage of all objects (like pods and services) in that namespace.
+•	If the namespace reaches its limit, new resources can't be created until something is deleted or more quota is allocated.
+
+Example in Real Life
+Imagine a Wi-Fi router at home:
+•	The internet speed (e.g., 100 Mbps) is your total resource.
+•	You assign limits to each device: 40 Mbps for laptops, 30 Mbps for phones, and 30 Mbps for TVs.
+•	If a phone tries to use more than 30 Mbps, it won't be allowed because of the limit.
+Similarly, in Kubernetes, resource quotas ensure no one exceeds their allocated limits.
+
+YAML Example
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: example-quota
+  namespace: dev-namespace
+spec:
+  hard:
+    pods: "10"                     # Limit to 10 pods in this namespace
+    requests.cpu: "4"              # Total CPU requests can't exceed 4 cores
+    requests.memory: "8Gi"         # Total memory requests can't exceed 8 GB
+    limits.cpu: "8"                # Total CPU usage can't exceed 8 cores
+    limits.memory: "16Gi"          # Total memory usage can't exceed 16 GB
+
+lab eg. 
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: ns-resource-quota
+  namespace: prod
+spec:
+  hard:
+    pods: "4"                     # Limit of 4 pods in this namespace
+    configmaps: "5"               # Limit of 5 config maps
+    persistentvolumeclaims: "5"   # Limit of 5 persistent volume claims
+    secrets: "5"                  # Limit of 5 secrets
+    services: "5"                 # Limit of 5 services
+
+kubectl create -f  ns-resource-quota.yaml 
+kubectl get resourcequotas -n prod
+kubectl describe resourcequotas -n prod 
+Name:                   ns-resource-quota
+Namespace:              prod
+Resource                Used  Hard
+--------                ----  ----
+configmaps              	1     	5
+persistentvolumeclaims  	0    	  5
+pods                    	0     	4
+secrets                 	0     	5
+services                	0     	5
+
+NOTE: By-default one config map creates while creating resource qutoa.
+If resource quota exceeded then we can update in by changing ns-resource-quotas.yaml file 
+kubectl apply -f ns-resource-quotas.yaml 
+kubectl get configmap
+
+eg. 3 
+Update the yaml by adding more resource for resources-quota limit. 
+
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: ns-resource-quota
+  namespace: prod
+spec:
+  hard:
+    requests.cpu: "1"             # Total CPU requests cannot exceed 1 core
+    requests.memory: "1Gi"        # Total memory requests cannot exceed 1 GiB
+    limits.cpu: "2"               # Total CPU limits cannot exceed 2 cores
+    limits.memory: "2Gi"          # Total memory limits cannot exceed 2 GiB
+    pods: "4"                     # Limit of 4 pods in this namespace
+    configmaps: "5"               # Limit of 5 config maps
+    persistentvolumeclaims: "5"   # Limit of 5 persistent volume claims
+    secrets: "5"                  # Limit of 5 secrets
+    services: "5"                 # Limit of 5 services
+
+kubectl create -f ns-resoureqotas.yaml 
+Now if we try to create any pod we get error 
+kubectl run prod1 --image nginx -n prod
+Error from server (Forbidden): pods "prod1" is forbidden: failed quota: ns-resource-quota: must specify limits.cpu for: prod1; limits.memory for: prod1; 
+requests.cpu for: prod1; requests.memory for: prod1
+
+kubectl run pod1 --image=nginx -n prod --dry-run=client -o yaml > pod.yaml 
+vim pod.yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  creationTimestamp: null
+  labels:
+    run: prod1
+  name: prod1
+  namespace: prod
+spec:
+  containers:
+  - image: nginx
+    name: prod1
+    resources:
+      requests:
+        memory: "100Mi"
+        cpu: "100m"
+      limits:
+        memory: "500Mi"
+        cpu: "200m"
+  dnsPolicy: ClusterFirst
+  restartPolicy: Always
+status: {}
+kubectl create -f pod.yaml 
+kubectl get pod -n prod
+kubectl describe pod -n prod
+
+Kubernetes Set Default Request Limit
+vim limit.yaml 
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: default-cpu-mem-limit-range
+  namespace: prod
+spec:
+  limits:
+    - default:
+        cpu: "500m"         # Default CPU limit for containers
+        memory: "500Mi"     # Default memory limit for containers
+      defaultRequest:
+        cpu: "200m"         # Default CPU request for containers
+        memory: "100Mi"     # Default memory request for containers
+      type: Container        # Apply this limit range to containers
+
+kubectl create -f limit.yaml 
+kubectl get limirange -n prod
+kubectl run afterlimitrangepod –image nginx -n prod 
+kubectl get pod -n prod 
+kubectl describe pod afterlimitrangepod -n prod 
+
