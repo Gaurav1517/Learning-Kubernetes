@@ -1,6 +1,6 @@
 *❤️जय श्री राधे कृष्णा❤️*
 ## **Kubernetes Documentation**
-Pod
+### Pod
 Pods are the smallest deployable units of computing that you create and manage in Kubernetes. 
 A Pod is  a group of one or more containers, with shared storage and network resources, and a specification for how to run the containers. A Pod's contents 
 are always co-located and co-scheduled, and run in a shared context. A Pod models an application-specific "logical host": it contains one or more application containers 
@@ -244,19 +244,31 @@ Explanation
 View Labels in JSON or YAML Format
 If you want more detailed information about the labels, you can describe or output the pod information in JSON or YAML:
 Describe Pod
+```bash
 kubectl describe pod <pod-name>
+```
 This command shows detailed information about the pod, including its labels.
 Get Pod Labels in JSON
+```bash
 kubectl get pod <pod-name> -o jsonpath='{.metadata.labels}'
+```
 Get Pod Labels in YAML
+```bash
 kubectl get pod <pod-name> -o yaml
+```
 Replace <pod-name> with the name of the specific pod.
 
 Delete a pod using the type and name specified in pod.yaml
+```bash
 kubectl delete -f  <filelName.yaml>
+```
 
 Delete pod with imperative command (manually) 
-Kubectl delete pod <podName>
+```bash
+kubectl delete pod <podName>
+```
 
 Delete all pods
-Kubectl delete pods --all 
+```bash
+kubectl delete pods --all
+```
