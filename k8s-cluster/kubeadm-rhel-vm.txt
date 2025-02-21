@@ -1,0 +1,394 @@
+CREATEING KUBENETES KUBEADM CLUSTER ON RHEL-9
+
+Ref: https://v1-30.docs.kubernetes.io/docs/setup/production-environment/tools/kubeadm/install-kubeadm/
+
+##########ADD FIREWALL PORTS ON MASTER NODES#############
+Ports and Protocol
+Ref: https://kubernetes.io/docs/reference/networking/ports-and-protocols/
+
+# Open port 6443 for the Kubernetes API server
+sudo firewall-cmd --zone=public --add-port=6443/tcp --permanent
+# Open ports 2379-2380 for etcd server client API
+sudo firewall-cmd --zone=public --add-port=2379-2380/tcp --permanent
+# Open port 10250 for Kubelet API
+sudo firewall-cmd --zone=public --add-port=10250/tcp --permanent
+# Open port 10259 for kube-scheduler
+sudo firewall-cmd --zone=public --add-port=10259/tcp --permanent
+# Open port 10257 for other Kubernetes services
+sudo firewall-cmd --zone=public --add-port=10257/tcp --permanent
+
+# Reload firewall 
+sudo firewall-cmd --reload
+# Check firewall port on master nodes
+sudo firewall-cmd --zone=public --list-ports
+
+###########ADD FIREWALL PORT AT WORKER NODES #############
+
+# Open port 6443 for the Kubernetes API server
+sudo firewall-cmd --zone=public --add-port=6443/tcp --permanent
+# Open port 10250 for Kubelet API
+sudo firewall-cmd --zone=public --add-port=10250/tcp --permanent
+# Open port 10256 for kube-proxy
+sudo firewall-cmd --zone=public --add-port=10256/tcp --permanent
+# Open port range 30000-32767 for NodePort services
+sudo firewall-cmd --zone=public --add-port=30000-32767/tcp --permanent
+
+# Reload firewall 
+sudo firewall-cmd --reload
+# Check firewall ports on worker nodes
+sudo firewall-cmd --zone=public --list-ports
+
+# check internet connectivity
+ping -c 4 google.com
+
+# Set hostname of the both machine
+hostnamectl set-hostname centos-master
+bash
+hostnamectl set-hostname centos-worker-1
+bash
+
+# Ping both machine
+ping -c 4 192.168.157.133
+ping -c 4 192.168.157.148
+
+
+# local dns-entry in /etc/hosts file
+cat <<EOF>> /etc/hosts
+
+192.168.157.133 centos-master
+192.168.157.148 centos-worker-1
+EOF
+
+# Verify
+cat /etc/hosts
+
+# ping with hostname
+ping -c 4 centos-master
+ping -c 4 centos-worker-1
+
+
+# Set SELinux in permissive mode (effectively disabling it)
+sudo setenforce 0
+sudo sed -i 's/^SELINUX=enforcing$/SELINUX=permissive/' /etc/selinux/config
+
+# Disable swap 
+sudo swapoff -a
+sudo sed -i '/ swap / s/^\(.*\)$/#\1/g' /etc/fstab
+
+# Verify
+cat /etc/fstab
+
+# Install and configure prerequisites
+#Ref: https://v1-30.docs.kubernetes.io/docs/setup/production-environment/container-runtimes/
+https://v1-29.docs.kubernetes.io/docs/setup/production-environment/container-runtimes/
+
+The following steps apply common settings for Kubernetes nodes on Linux.
+
+You can skip a particular setting if you're certain you don't need it.
+
+For more information, see Network Plugin Requirements or the documentation for your specific container runtime.
+Forwarding IPv4 and letting iptables see bridged traffic
+
+Execute the below mentioned instructions:
+
+cat <<EOF | sudo tee /etc/modules-load.d/k8s.conf
+overlay
+br_netfilter
+EOF
+
+sudo modprobe overlay
+sudo modprobe br_netfilter
+
+# sysctl params required by setup, params persist across reboots
+cat <<EOF | sudo tee /etc/sysctl.d/k8s.conf
+net.bridge.bridge-nf-call-iptables  = 1
+net.bridge.bridge-nf-call-ip6tables = 1
+net.ipv4.ip_forward                 = 1
+EOF
+
+# Apply sysctl params without reboot
+sudo sysctl --system
+
+# Verify that the br_netfilter, overlay modules are loaded by running the following commands:
+
+lsmod | grep br_netfilter
+lsmod | grep overlay
+
+#Verify that the net.bridge.bridge-nf-call-iptables, net.bridge.bridge-nf-call-ip6tables, and net.ipv4.ip_forward system variables are set to 1 in your sysctl config by running the following command:
+
+sysctl net.bridge.bridge-nf-call-iptables net.bridge.bridge-nf-call-ip6tables net.ipv4.ip_forward
+
+
+
+################INSTALL CONTAINERD#################
+NOTE: Make sure podman is removed from before installing docker and containerd & system must be updated .
+sudo yum remove podman -y 
+sudo yum update -y 
+
+###Install containerd
+Ref: https://github.com/containerd/containerd/blob/main/docs/getting-started.md
+
+# Download the containerd binary
+curl -LO https://github.com/containerd/containerd/releases/download/v1.7.24/containerd-1.7.24-linux-amd64.tar.gz 
+# Extract the containerd binary to /usr/local
+sudo tar Cxzvf  /usr/local/  containerd-1.7.24-linux-amd64.tar.gz
+# Download the containerd service file
+curl -LO https://raw.githubusercontent.com/containerd/containerd/main/containerd.service
+Create system directory 
+sudo mkdir -p /usr/local/lib/systemd/system/
+# Move the containerd service file to the correct location
+sudo mv containerd.service  /usr/local/lib/systemd/system/
+# Create the containerd config directory if it doesn't exist
+sudo mkdir -p /etc/containerd
+# Generate the default containerd config
+containerd config default | sudo tee /etc/containerd/config.toml
+# Update the SystemdCgroup setting in the config
+sudo sed -i 's/SystemdCgroup = false/SystemdCgroup = true/g' /etc/containerd/config.toml
+# Verify "SystemdCgroup = true"
+sudo sed -n '/SystemdCgroup /p' /etc/containerd/config.toml 
+
+# Reload systemd daemon to recognize the new service
+sudo systemctl daemon-reload
+# Enable and start containerd service
+sudo systemctl enable containerd.service
+sudo systemctl start containerd.service
+sudo systemctl status containerd.service
+
+Install runc
+Ref: https://github.com/opencontainers/runc/releases
+
+curl -LO https://github.com/opencontainers/runc/releases/download/v1.2.5/runc.amd64
+sudo install -m 755 runc.amd64 /usr/local/sbin/runc
+
+##Install CNI
+Ref: https://github.com/containernetworking/plugins/releases
+check system with 
+uname -m
+curl -LO https://github.com/containernetworking/plugins/releases/download/v1.6.2/cni-plugins-linux-amd64-v1.6.2.tgz
+mkdir -p /opt/cni/bin
+sudo tar Cxzvf /opt/cni/bin cni-plugins-linux-amd64-v1.6.2.tgz 
+
+
+
+VERSION="v1.30.0" # check latest version in /releases page
+wget https://github.com/kubernetes-sigs/cri-tools/releases/download/v1.30.0/crictl-v1.30.0-linux-amd64.tar.gz
+sudo tar zxvf crictl-v1.30.0-linux-amd64.tar.gz -C /usr/local/bin
+rm -f crictl-v1.30.0-linux-amd64.tar.gz
+
+
+# Add Kubernetes yum repository.
+# This overwrites any existing configuration in /etc/yum.repos.d/kubernetes.repo
+cat <<EOF | sudo tee /etc/yum.repos.d/kubernetes.repo
+[kubernetes]
+name=Kubernetes
+baseurl=https://pkgs.k8s.io/core:/stable:/v1.30/rpm/
+enabled=1
+gpgcheck=1
+gpgkey=https://pkgs.k8s.io/core:/stable:/v1.30/rpm/repodata/repomd.xml.key
+exclude=kubelet kubeadm kubectl cri-tools kubernetes-cni
+EOF
+
+# update the system
+yum update -y 
+
+# Install kubelet, kubeadm and kubectl:
+sudo yum install -y kubelet kubeadm kubectl --disableexcludes=Kubernetes
+
+# Enable & start, status  the kubelet service before running kubeadm:
+sudo systemctl enable kubelet
+sudo systemctl start kubelet
+sudo systemctl status kubelet
+
+#Check version of kubeadm, kubelet, kubectl
+kubeadm version
+kubelet --version
+kubectl version --client
+
+# configure crictl to work with containerd
+sudo crictl config runtime-endpoint unix:///var/run/containerd/containerd.sock
+sudo crictl config image-endpoint unix:///var/run/containerd/containerd.sock
+
+
+#####################RUN ON ONLY MASTER NODE############
+# Before initializing pull images 
+kubeadm config images pull
+# initialize control plane
+sudo kubeadm init --pod-network-cidr=10.244.0.0/16 --ignore-preflight-errors=all
+
+kubeadm join 192.168.157.133:6443 --token lh27f0.jasgu9nvmgfslycc --discovery-token-ca-cert-hash sha256:dfd235c7431813765364de1119d7bf45f20e3726f68c2b0300a87efb275835bb
+
+mkdir -p $HOME/.kube
+sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
+sudo chown $(id -u):$(id -g) $HOME/.kube/config
+
+# install calico network
+Ref: https://docs.tigera.io/calico/3.28/getting-started/kubernetes/quickstart
+
+kubectl create -f https://raw.githubusercontent.com/projectcalico/calico/v3.28.2/manifests/tigera-operator.yaml
+kubectl create -f https://raw.githubusercontent.com/projectcalico/calico/v3.28.2/manifests/custom-resources.yaml
+
+# Verify calico network
+kubectl get pod -A
+kubectl get nodes
+
+IF getting coredns  error run this command
+Ref: https://kubernetes.io/docs/tasks/administer-cluster/migrating-from-dockershim/troubleshooting-cni-plugin-related-errors/
+
+cat << EOF | tee /etc/cni/net.d/10-containerd-net.conflist
+{
+ "cniVersion": "1.0.0",
+ "name": "containerd-net",
+ "plugins": [
+   {
+     "type": "bridge",
+     "bridge": "cni0",
+     "isGateway": true,
+     "ipMasq": true,
+     "promiscMode": true,
+     "ipam": {
+       "type": "host-local",
+       "ranges": [
+         [{
+           "subnet": "10.88.0.0/16"
+         }],
+         [{
+           "subnet": "2001:db8:4860::/64"
+         }]
+       ],
+       "routes": [
+         { "dst": "0.0.0.0/0" },
+         { "dst": "::/0" }
+       ]
+     }
+   },
+   {
+     "type": "portmap",
+     "capabilities": {"portMappings": true},
+     "externalSetMarkChain": "KUBE-MARK-MASQ"
+   }
+ ]
+}
+EOF
+
+# to reset nodes (OPTIONAL)
+kubeadm reset --cri-socket unix:///var/run/containerd/containerd.sock --v=5
+
+
+################################################################
+To remove docker kubernets package .
+ yum remove -y docker-ce-cli.x86_64 docker-ce.x86_64  docker-compose-plugin.x86_64 containerd.io.x86_64  -y
+yum remove kubelet.x86_64 kubeadm.x86_64 kubectl.x86_64 kubernetes-cni.x86_64  -y
+
+ rm -rf /etc/yum.repos.d/docker-ce.repo /etc/yum.repos.d/kubernetes.repo
+ls /etc/yum.repos.d/
+yum clean all
+yum update -y 
+
+######################### CNI-ERROR ##############################
+kubeadm join 192.168.157.146:6443 --token 4elf47.1j4hze2e6m1yl9w9 --discovery-token-ca-cert-hash sha256:74115dba3b9c79328fb12d96c41e4ab204521ff852c17c334e914097628dd2fb
+[preflight] Running pre-flight checks
+        [WARNING Swap]: swap is supported for cgroup v2 only; the NodeSwap feature gate of the kubelet is beta but disabled by default
+[preflight] Reading configuration from the cluster...
+[preflight] FYI: You can look at this config file with 'kubectl -n kube-system get cm kubeadm-config -o yaml'
+[kubelet-start] Writing kubelet configuration to file "/var/lib/kubelet/config.yaml"
+[kubelet-start] Writing kubelet environment file with flags to file "/var/lib/kubelet/kubeadm-flags.env"
+[kubelet-start] Starting the kubelet
+[kubelet-check] Waiting for a healthy kubelet at http://127.0.0.1:10248/healthz. This can take up to 4m0s
+
+[kubelet-check] The kubelet is not healthy after 4m0.001251s
+
+Unfortunately, an error has occurred:
+        The HTTP call equal to 'curl -sSL http://127.0.0.1:10248/healthz' returned error: Get "http://127.0.0.1:10248/healthz": context deadline exceeded
+
+
+This error is likely caused by:
+        - The kubelet is not running
+        - The kubelet is unhealthy due to a misconfiguration of the node in some way (required cgroups disabled)
+
+If you are on a systemd-powered system, you can try to troubleshoot the error with the following commands:
+        - 'systemctl status kubelet'
+        - 'journalctl -xeu kubelet'
+error execution phase kubelet-start: The HTTP call equal to 'curl -sSL http://127.0.0.1:10248/healthz' returned error: Get "http://127.0.0.1:10248/healthz": context deadline exceeded
+
+To see the stack trace of this error execute with --v=5 or higher
+################################################3
+
+sudo dnf -y install dnf-plugins-core
+sudo dnf config-manager --add-repo https://download.docker.com/linux/rhel/docker-ce.repo
+sudo yum update -y
+sudo dnf install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+
+
+sudo mkdir -p /etc/containerd
+containerd config default | sudo tee /etc/containerd/config.toml
+
+sudo sed -i 's/SystemdCgroup = false/SystemdCgroup = true/g' /etc/containerd/config.toml
+
+sudo sed -n '/SystemdCgroup /p' /etc/containerd/config.toml 
+
+sudo systemctl daemon-reload
+sudo systemctl restart containerd.service
+sudo systemctl enable containerd.service
+sudo systemctl status containerd.service
+
+cat <<EOF | sudo tee /etc/yum.repos.d/kubernetes.repo
+[kubernetes]
+name=Kubernetes
+baseurl=https://pkgs.k8s.io/core:/stable:/v1.29/rpm/
+enabled=1
+gpgcheck=1
+gpgkey=https://pkgs.k8s.io/core:/stable:/v1.29/rpm/repodata/repomd.xml.key
+exclude=kubelet kubeadm kubectl cri-tools kubernetes-cni
+EOF
+
+yum update -y 
+dnf makecache
+
+sudo yum install -y kubelet kubeadm kubectl --disableexcludes=Kubernetes
+
+sudo systemctl enable --now kubelet
+sudo systemctl start kubelet
+sudo systemctl status kubelet
+
+sudo kubeadm config images pull
+
+# NOTE: Run on control-plane/master node only
+kubeadm init
+
+ mkdir -p $HOME/.kube
+  sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
+  sudo chown $(id -u):$(id -g) $HOME/.kube/config
+
+kubeadm join 192.168.157.133:6443 --token <<token>> --discovery-token-ca-cert-hash sha256:<<ca-cret-hash-token>>
+
+Ref: https://archive-os-3-26.netlify.app/calico/3.26/getting-started/kubernetes/quickstart
+kubectl create -f https://raw.githubusercontent.com/projectcalico/calico/v3.26.5/manifests/tigera-operator.yaml
+
+# Ref: https://kubernetes.io/docs/reference/kubectl/quick-reference/
+source <(kubectl completion bash) # set up autocomplete in bash into the current shell, bash-completion package should be installed first.
+echo "source <(kubectl completion bash)" >> ~/.bashrc # add autocomplete permanently to your bash shell.
+
+#Configure DNS with systemd-resolved (temp)
+# If get ERROR to create pod then check nameserver
+vim /etc/resolv.conf
+nameserver 8.8.8.8
+nameserver 8.8.4.4
+
+
+#Configure DNS with systemd-resolved
+#Edit the /etc/systemd/resolved.conf
+vim /etc/system/resolved.conf
+[Resolve]
+DNS=8.8.8.8 8.8.4.4
+FallbackDNS=1.1.1.1 1.0.0.1
+
+sudo systemctl restart systemd-resolved
+# Verity the DNS configuration:
+systemd-resolve --status
+
+# Resatert kubelet & containerd service
+sudo systemctl restart containerd.service kubelet.service
+# Check status 
+sudo systemctl status containerd.service kuelet.service
+
+
