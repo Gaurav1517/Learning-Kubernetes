@@ -364,6 +364,10 @@ kubeadm join 192.168.157.133:6443 --token <<token>> --discovery-token-ca-cert-ha
 Ref: https://archive-os-3-26.netlify.app/calico/3.26/getting-started/kubernetes/quickstart
 kubectl create -f https://raw.githubusercontent.com/projectcalico/calico/v3.26.5/manifests/tigera-operator.yaml
 
+OR
+Ref: https://docs.tigera.io/calico/3.27/getting-started/kubernetes/self-managed-onprem/onpremises
+kubectl create -f https://raw.githubusercontent.com/projectcalico/calico/v3.27.5/manifests/calico.yaml 
+
 # Ref: https://kubernetes.io/docs/reference/kubectl/quick-reference/
 source <(kubectl completion bash) # set up autocomplete in bash into the current shell, bash-completion package should be installed first.
 echo "source <(kubectl completion bash)" >> ~/.bashrc # add autocomplete permanently to your bash shell.
