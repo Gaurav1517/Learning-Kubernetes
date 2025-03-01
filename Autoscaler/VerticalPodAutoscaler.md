@@ -157,4 +157,3 @@ kubectl delete -f examples/hamster.yaml
 ## Conclusion
 
 I have successfully installed and tested both the Metrics Server and Vertical Pod Autoscaler. Metrics Server is providing resource usage data, and the Vertical Pod Autoscaler is adjusting resource requests for your pods based on their usage patterns.
-```
