@@ -39,7 +39,9 @@ ls
 kubectl apply -f examples/hamster.yaml
 # Get the Pods from the hamster example application.
  kubectl get pods -l app=hamster
-
+ kubectl get --watch Pods -l app=hamster
+ ![vpa-snap]()
+ 
 #An example output is as follows.
 
 hamster-c7d89d6db-rglf5   1/1     Running   0          48s
