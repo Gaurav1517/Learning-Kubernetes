@@ -105,9 +105,6 @@ spec:
 This pod will tolerate taints with the `NoSchedule` effect on the `dedicated=high-priority` taint, as well as any taints with the `NoExecute` effect.
 
 ## Taint and Toleration Lab Practice
-Here’s the complete list of lab commands for practicing **Taints and Tolerations in Kubernetes** along with their descriptions:
-
-## Taint and Toleration Lab Practice
 
 ### 1. **Get the list of nodes:**
 ```bash
@@ -168,6 +165,7 @@ kubectl get pod --watch
 kubectl describe pod test
 ```
 - This command provides detailed information about the pod `test`, including its scheduling information and reasons if it failed to be scheduled due to a taint.
+![taint-1](taint-1.png)
 
 ### 11. **Show the last 4 lines of the pod's description:**
 ```bash
@@ -192,6 +190,7 @@ kubectl get node
 kubectl run test-1 --image=nginx --dry-run=client -o yaml > taint-toleration-pod.yaml
 ```
 - This command creates a dry-run of a pod named `test-1` using the `nginx` image, outputting the spec as YAML to a file named `taint-toleration-pod.yaml`.
+![taint-2](tiant-2.png)
 
 ### 15. **Edit the YAML file for the pod to add tolerations:**
 ```bash
@@ -234,6 +233,7 @@ kubectl get pod -o wide
 kubectl run dev --image=nginx
 ```
 - This command creates a development pod named `dev` using the `nginx` image. It is useful to test running other types of pods in the cluster.
+![taint-3](taint-3.png)
 
 ### 22. **Check the taints on the nodes:**
 ```bash
@@ -289,6 +289,7 @@ kubectl get pod -o wide
 kubectl get pod -o wide --watch
 ```
 - This command continuously watches for any changes to pod statuses, making it useful for observing pod creation or eviction events.
+![taint-4](taint-4.png)
 
 ### 31. **Get detailed information about the nodes:**
 ```bash
@@ -313,5 +314,7 @@ kubectl describe node centos-master | grep -i taint
 kubectl get pod -o wide
 ```
 - This command checks the pod status and ensures that pods are scheduled or evicted based on the applied taints.
+![taint-5](taint-5.png)
 
-```
+### Refrence:
+Ref: https://kubernetes.io/docs/concepts/scheduling-eviction/taint-and-toleration/
