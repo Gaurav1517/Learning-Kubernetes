@@ -14,10 +14,12 @@ A taint is a key-value pair applied to a node that prevents pods from being sche
    - `NoSchedule`: Pods without the matching toleration will not be scheduled on the node.
    - `PreferNoSchedule`: Pods without the matching toleration will be scheduled elsewhere if possible, but it is not strictly enforced.
    - `NoExecute`: Pods without the matching toleration will be evicted if they are already running on the node.
+![taint-0](taint-0.png)
 
 ### Tolerations
 
 A toleration is applied to a pod to allow it to be scheduled on a node with a matching taint. A pod with a toleration can "tolerate" a tainted node and be scheduled on it.
+
 
 ## Example Use Case
 
