@@ -1,0 +1,166 @@
+############### STATIC POD ####################
+
+StaticPod
+
+	A Static Pod is type of Pod in K8s that is directly managed by the kubelet on each node rather than by k8s control
+ plane (API server) . Static Pods are tipically defined in a file on the node, and the kubelet watches the file
+ to automatically create ,delete, or update, the pod as needed.
+
+Key points about Static Pods:
+
+    No API Server Management: Static Pods are not registered in the Kubernetes API server like regular Pods. They are created
+    and managed by the kubelet on each node.
+    Defined on Node: The configuration of a Static Pod is placed in a file (usually a .yaml file) on a node, and the kubelet manages these Pods.
+    Pod Lifecycle: The kubelet ensures that the Static Pod is always running on the node. If it crashes, the kubelet will automatically restart it.
+
+How Static Pods Work
+
+    You create a Static Pod definition on a specific node (e.g., /etc/kubernetes/manifests/).
+    The kubelet on that node monitors this directory and ensures that the Pod is running.
+    If the Static Pod crashes or is deleted from the node, the kubelet will automatically recreate it based on the definition file.
+
+Key Advantages of Static Pods
+
+    Simplicity: Static Pods are easy to set up as they don't require interaction with the Kubernetes control plane (API server). 
+    This makes them ideal for certain critical system components.
+
+    Self-Healing: The kubelet automatically ensures that Static Pods are running. If the Pod crashes or gets deleted,
+    it will be automatically recreated by the kubelet.
+
+    Control Over Node-Specific Resources: Static Pods are useful for workloads that need to run directly on a specific
+    node, such as logging or monitoring agents, which should run on every node.
+
+    No Dependence on API Server: Static Pods don’t need the Kubernetes API server to function, so they are useful for 
+    critical infrastructure components where you want to make sure they are always running.
+
+Disadvantages of Static Pods
+
+    No Cluster-Wide Management: Static Pods are not controlled by the Kubernetes API server, so they cannot be managed by
+    the usual Kubernetes management tools (like kubectl get pods for querying them).
+
+    No Replica Management: Unlike regular Pods managed by controllers (like Deployments or DaemonSets), Static Pods cannot 
+    scale or have replicas managed automatically.
+
+    Manual Management: You have to manually manage the YAML files for Static Pods on each node.
+
+
+kubectl get node -o wide
+kubectl -n kube-system get pod 
+kubectl -n kube-system delete pod/kube-scheduler-controlplane
+
+kubectl -n kube-system get pod 
+kubectl -n kube-system get deployment
+kubectl -n kube-system get daemonsets
+kubectl -n kube-system get replicasets
+kubectl -n kube-system get replicationcontrollers
+
+kubectl -n kube-system describe pod/kube-scheduler-controlplane
+kubectl -n kube-system describe pod kube-scheduler-controlplane  | grep -i Controlled
+Controlled By:  Node/centos-master
+kubectl -n kube-system get pod -A
+kubectl -n kube-system describe pod/coredns-76f75df574-fzwgm
+kubectl -n kube-system describe pod coredns-76f75df574-fzwgm | grep -i Controlled
+Controlled By:  ReplicaSet/coredns-76f75df574
+
+Check kubelet configuration file
+ls -lrt /var/lib/kubelet/config.yaml
+cat /var/lib/kubelet/config.yaml | grep -i staticPodPath
+staticPodPath: /etc/kubernetes/manifests
+
+# Let's change the staticPodPath
+# Create a directory for staticPodPath
+mkdir -p /customPath/ofStaticPod
+
+# Go inside the kubelet configuration file and change the staticPodPath
+sed -i 's|^staticPodPath: .*|staticPodPath: /customPath/ofStaticPod|' /var/lib/kubelet/config.yaml
+
+# Verify:
+grep "staticPodPath" /var/lib/kubelet/config.yaml
+
+# Copy all the files from /etc/kubernetes/manifests
+cp -rvf /etc/kubernetes/manifests/* /customPath/ofStaticPod/
+
+# Restart kubelet
+systemctl restart kubelet
+systemctl status kubelet
+
+# Check nodes
+kubectl get nodes
+# Note: it should show the node as Ready
+
+# Verify the pods in the kube-system namespace
+kubectl -n kube-system get pods
+
+# If we delete kube-scheduler-controlplane, then none of the pods will be created
+rm -rf /customPath/ofStaticPod/kube-scheduler.yaml
+kubectl -n kube-system get pods
+
+# Try to create a pod. It will go into the pending state because the scheduler is not running.
+kubectl run test --image=nginx --dry-run=client -o yaml | tee test-pod.yaml | kubectl create -f -
+
+# Note: If the scheduler is not running, no pod will be scheduled on the nodes, so it will remain in the pending state.
+kubectl describe pod test
+
+# Create a static pod without the scheduler
+kubectl run test-2 --image=nginx --dry-run=client -o yaml > /customPath/ofStaticPod/test-2-pod.yaml
+
+kubectl get pod/test-2
+kubectl describe pod/test-2
+kubectl describe pod/test-2 | grep -i Controlled
+kubectl get pod/test-2 -o yaml | grep -i -A 5 "ownerReference"
+
+# Example output of ownerReference:
+# ownerReferences:
+# - apiVersion: v1
+#   controller: true
+#   kind: Node
+#   name: controlplane
+
+# If we want to keep the pod on the worker-1 node, we need to define it in the pod.yaml file
+vim /customPath/ofStaticPod/test-3-pod.yaml
+
+# Note: apiServer and database (etcd) server must be running.
+apiVersion: v1
+kind: Pod
+metadata:
+  creationTimestamp: null
+  labels:
+    run: test
+  name: test
+spec:
+  nodeName: worker-1
+  containers:
+  - image: nginx
+    name: test-3
+    resources: {}
+  dnsPolicy: ClusterFirst
+  restartPolicy: Always
+status: {}
+
+# Create the pod on the worker-1 node
+kubectl create -f /customPath/ofStaticPod/test-3-pod.yaml
+kubectl get pod -o wide
+
+
+########################################
+# Interview Questions
+
+1. What is the kubelet configuration file path?
+   - Answer: `/var/lib/kubelet/config.yaml`
+
+2. What is the default staticPodPath?**
+   - Answer: `/etc/kubernetes/manifests`
+
+3. How to create a DaemonSet with an imperative command?
+   - Answer:
+kubectl create deployment daemonset-test \
+ --image=nginx \
+ -n default \
+ --dry-run=client \
+ -o yaml |  \
+sed "s/Deployment/DaemonSet/" | \
+sed '/replicas/d' | \
+sed '/strategy/d' | \
+kubectl apply -f -
+
+
