@@ -1,0 +1,350 @@
+########### High Available 3-Node etcd Cluster & certificate server ############
+
+Take 3 machine
+192.168.70.132
+192.168.70.130
+192.168.70.133
+192.168.70 135
+
+
+All machine should ping each other & internet to ..
+Allow ports in firewall
+
+#Dependencies.....
+# Update the system
+# Note: yum repository must be configured. 
+dnf update -y  
+# Required packages
+sudo dnf install -y vim curl wget tree tar 
+# Modern tools like ping to test and trace network connections.
+sudo dnf install iputils  
+# networking command like ifconfig .
+sudo dnf install net-tools -y
+
+# Check internet connectivity...
+ping -c 4 google.com
+
+# Check connectivity of node each other
+ping -c 4 192.168.70.132
+ping -c 4 192.168.70.130
+ping -c 4 192.168.70.133
+ping -c 4 192.168.70.135
+
+# Set hostname of each server
+hostnamectl set-hostname certificate-server
+hostnamectl set-hostname etcd1
+hostnamectl set-hostname etcd2
+hostnamectl set-hostname etcd3
+bash
+
+# Entry local dns /etc/hosts file
+sudo bash -c 'cat <<EOF >> /etc/hosts
+192.168.70.132 certificate-server
+192.168.70.130 etcd1
+192.168.70.133 etcd2
+192.168.70.135 etcd3
+EOF'
+
+# ping all node each other local dns
+sudo ping -c 4 certificate-server
+sudo ping -c 4 etcd1
+sudo ping -c 4 etcd2
+sudo ping -c 4 etcd3
+
+# Configure etcd Binaries
+mkdir -p /root/binaries
+cd /root/binaries
+wget https://github.com/etcd-io/etcd/releases/download/v3.6.0/etcd-v3.6.0-linux-amd64.tar.gz
+tar -xzf etcd-v3.6.0-linux-amd64.tar.gz
+cd etcd-v3.6.0-linux-amd64
+cp etcd etcdctl /usr/local/bin/
+
+#optional (test manually)
+cd /tmp
+etcd
+ectdctl  put test "checking etcd manullay"
+etcdctl get test
+
+
+#Certificate-server
+🔐 Generate etcd self sing Certificates (with SAN)
+mkdir /etc/etcd
+cd /etc/etcd
+
+openssl genrsa -out etcd-ca.key 4096
+
+openssl -req x509 -new nodes -key etcd-ca.key -sha256 -days 3650 -subj "/CN=etcd-ca" -out etcd-ca.crt
+
+openssl genrsa -out etcd1.key 2048
+
+openssl req -new -key etcd1.key -out etcd1.csr -subj "/CN=etcd1"
+
+cat > etcd1-openssl.cnf <<EOF
+[req]
+distinguished_name = req_distinguished_name
+x509_extensions = v3_req
+prompt = no
+
+[req_distinguished_name]
+CN = etcd1
+
+[v3_req]
+keyUsage = cirtical, digitalSignature, keyEncipherment
+extendedKeyUsage = serverAuth, clientAuth
+subjectAltName = @alt_names
+
+[alt_names]
+DNS.1 etcd1
+IP.1 = <etcd1-IP>
+IP.2 = 127.0.0.1
+EOF
+
+openssl x509 -req -in etcd1.csr -CA etcd-ca.crt -CAkey etcd-ca.key -CAcreateserial -out etcd1.crt -days 365 -extensions v3_req -extfile etcd1-openssl.cnf
+
+#check 
+openssl x509 -in etcd1.crt -noout -text | grep -A1 "Subject Alternative Name"
+
+Copy the certificates to all etcd nodes
+For the need to set nodes password and configure ssh
+passwd root
+vim /etc/ssh/sshd_config/60-cloudimg-settings.conf
+PasswrodAuthentication no 
+to 
+PasswrodAuthentication yes
+
+vim /etc/ssh/sshd_config
+PermitRootLogin yes
+
+systemctl restart ssh
+
+# Create directories in etcd nodes
+mkdir /etc/etcd
+
+# copy certificate from certificate-server to etcd-nodes
+rsync -ivh etcd-ca.crt root@192.168.70.130:/etc/etcd
+rsync -ivh etcd1.crt root@192.168.70.130:/etc/etcd
+rsync -ivh etcd1.key root@192.168.70.130:/etc/etcd
+ls /etc/etcd/
+
+
+Configuration on etcd nodes
+mkdir /var/lib/etcd
+chmod 700 /var/lib/etcd/
+OR
+sudo chown etcd:etcd /var/lib/etcd
+
+#Create systemd unit file
+vim /etc/systemd/system/etcd.service
+[Unit]
+Description=etcd
+Documentation=https://etcd.io/docs/, https://github.com/etcd-io/etcd
+After=network.target
+
+[Service]
+ExecStart=/usr/local/bin/etcd \
+  --name <NODE_NAME> \
+  --data-dir /var/lib/etcd \
+  --listen-peer-urls https://<NODE_IP>:2380 \
+  --listen-client-urls https://<NODE_IP>:2379,https://127.0.0.1:2379 \
+  --advertise-client-urls https://<NODE_IP>:2379 \
+  --initial-advertise-peer-urls https://<NODE_IP>:2380 \
+  --initial-cluster <NODE1_NAME>=https://<NODE1_IP>:2380,<NODE2_NAME>=https://<NODE2_IP>:2380,<NODE3_NAME>=https://<NODE3_IP>:2380 \
+  --initial-cluster-state new \
+  --initial-cluster-token=etcd-cluster-1 \
+  --cert-file=/etc/etcd/etcd1.crt \
+  --key-file=/etc/etcd/etcd1.key \
+  --trusted-ca-file=/etc/etcd/etcd-ca.crt \
+  --client-cert-auth=true \
+  --peer-cert-file=/etc/etcd/etcd1.crt \
+  --peer-key-file=/etc/etcd/etcd1.key \
+  --peer-trusted-ca-file=/etc/etcd/etcd-ca.crt \
+  --peer-client-cert-auth=true
+Restart=always
+RestartSec=5
+
+
+[Install]
+WantedBy=multi-user.target
+
+
+ eg. 
+ Example (etcd-1):
+If this is etcd-1 with IP 10.0.0.1:
+--name etcd-1 \
+--initial-advertise-peer-urls https://10.0.0.1:2380 \
+--listen-peer-urls https://10.0.0.1:2380 \
+--listen-client-urls https://10.0.0.1:2379,https://127.0.0.1:2379 \
+--advertise-client-urls https://10.0.0.1:2379 \
+--initial-cluster etcd-1=https://10.0.0.1:2380,etcd-2=https://10.0.0.2:2380,etcd-3=https://10.0.0.3:2380
+ 
+
+sudo systemctl daemon-reload
+sudo systemctl enable etcd
+sudo systemctl start etcd
+
+# Interact with etcd securely and query the list of cluster members
+ETCDCTL_API=3 etcdctl \
+  --endpoints=https://192.168.1.10:2379,https://192.168.1.11:2379 \
+  --cacert=/etc/etcd/etcd-ca.crt \
+  --cert=/etc/etcd/etcd1.crt \
+  --key=/etc/etcd/etcd1.key \
+  member list
+
+# tO Verify certificate
+openssl verify -CAfile etcd-ca.crt etcd1.crt
+openssl -x509 -in etcd1.crt -text -noout
+
+
+
+########### Create Master node and integrate etcd nodes with master node #########
+t2.meduim 
+
+dnf update -y 
+passwd root
+# Enable passworAuthentication yes & permitRootLogin yes
+vim /etc/ssh/sshd_config/60-cloudimg-settings.conf
+PasswrodAuthentication yes
+
+vim /etc/ssh/sshd_config
+PermitRootLogin yes
+
+systemctl restart ssh
+
+sudo dnf install -y vim curl wget tree tar iputils net-tools
+hostnamectl set-hostname master
+
+
+# Certificate-Sever
+Create certificate for master node
+cd /etc/etcd
+
+openssl genrsa -out client.key 2048
+openssl req -new -key client.key -out client.csr -subj "/CN=clinet"
+
+cat > client-openssl.cnf <<EOF
+[req]
+distinguished_name = req_distinguished_name
+x509_extensions = v3_req
+prompt = no
+
+[req_distinguished_name]
+CN = master
+
+[v3_req]
+keyUsage = cirtical, digitalSignature, keyEncipherment
+extendedKeyUsage = serverAuth, clientAuth
+subjectAltName = @alt_names
+
+[alt_names]
+DNS.1 master
+IP.1 = 192.168.70.136
+IP.2 = 127.0.0.1
+EOF
+
+openssl x509 -req -in client.csr -CA etcd-ca.crt -CAkey etcd-ca.key -CAcreateserial -out client.crt -days 365 -extensions v3_req -extfile client-openssl.cnf
+
+mkdir -p /etc/Kubernetes/pki/etcd  # on master-node
+
+# copy form certificate-server to master nodes
+rsync -avh etcd-ca.crt root@<masterNode-IP>:/etc/Kubernetes/pki/etcd/
+rsync -avh client.crt root@<masterNode-IP>:/etc/Kubernetes/pki/etcd/
+rsync -avh client.key root@<masterNode-IP>:/etc/Kubernetes/pki/etcd/
+
+ls /etc/Kubernetes/pki/etcd/
+
+# master node
+# REF: https://kubernetes.io/docs/reference/config-api/kubeadm-config.v1beta3/
+
+Create etcd-Database integration file
+
+vim kubeadm-config.yaml
+apiVersion: kubeadm.k8s.io/v1beta3
+kind: ClusterConfiguration
+etcd:
+   external:
+     endpoints:
+     - https://<etcd1-IP>:2379
+     - https://<etcd2-IP>:2379
+     - https://<etcd3-IP>:2379
+     caFile: "/etcd/kubernetes/pki/etcd/etcd-ca.crt"
+     certFile: "/etcd/kubernetes/pki/etcd/client.crt"
+     keyFile: "/etcd/kubernetes/pki/etcd/client.key"
+networking:
+  podSubnet: "10.244.0.0/16"
+
+# Set SELinux in permissive mode (effectively disabling it)
+sudo setenforce 0
+sudo sed -i 's/^SELINUX=enforcing$/SELINUX=permissive/' /etc/selinux/config
+# swap disable 
+sudo swapoff -a
+sudo sed -i '/ swap / s/^\(.*\)$/#\1/g' /etc/fstab
+
+modprobe overlay
+modprobe br_netfilter
+
+cat <<EOF | sudo tee /etc/modules-load.d/containerd.conf
+overlay
+br_netfilter
+
+sysctl -w net.bridge.bridge-nf-call-iptables = 1
+sysctl -w net.ipv4.ip_forward = 1
+sysctl -w net.bridge.bridge-nf-call-ip6tables = 1
+
+sysctl --system
+lsmod | grep br_netfilter
+lsmod | grep overlay
+sysctl net.bridge.bridge-nf-call-iptables net.bridge.bridge-nf-call-ip6tables net.ipv4.ip_forward
+
+dnf update -y 
+
+# Install containerd
+# Ref: https://docs.docker.com/engine/install/rhel/
+
+sudo dnf -y install dnf-plugins-core
+sudo dnf config-manager --add-repo https://download.docker.com/linux/rhel/docker-ce.repo
+sudo dnf install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+
+sudo systemctl enable --now containerd
+sudo systemctl status containerd
+
+mkdir -p /etc/containerd
+containerd config default | sudo tee /etc/containerd/config.toml
+sudo sed -i 's/SystemdCgroup = false/SystemdCgroup = true/g' /etc/containerd/config.toml
+sudo sed -n '/SystemdCgroup /p' /etc/containerd/config.toml
+sudo systemctl daemon-reload
+sudo systemctl restart containerd.service
+sudo systemctl status containerd.service
+
+
+# This overwrites any existing configuration in /etc/yum.repos.d/kubernetes.repo
+cat <<EOF | sudo tee /etc/yum.repos.d/kubernetes.repo
+[kubernetes]
+name=Kubernetes
+baseurl=https://pkgs.k8s.io/core:/stable:/v1.32/rpm/
+enabled=1
+gpgcheck=1
+gpgkey=https://pkgs.k8s.io/core:/stable:/v1.32/rpm/repodata/repomd.xml.key
+exclude=kubelet kubeadm kubectl cri-tools kubernetes-cni
+EOF
+
+sudo yum install -y kubelet kubeadm kubectl --disableexcludes=Kubernetes
+sudo systemctl enable --now kubelet
+
+kubeadm init --config kubeadm-config.yaml
+
+ mkdir -p $HOME/.kube
+ sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
+ sudo chown $(id -u):$(id -g) $HOME/.kube/config
+# Calico 
+#Ref: https://docs.tigera.io/calico/3.27/getting-started/kubernetes/self-managed-onprem/onpremises
+curl https://raw.githubusercontent.com/projectcalico/calico/v3.26.0/manifests/calico.yaml
+
+kubectl get nodes
+kubectl -n kube-system kube-system
+
+Database file
+/var/lib/etcd/member
+
+to check etcd primary secondary 
+etcdctl --endpoints=https://etcd1:2379,https://etcd2:2379,https://etcd3:2379 --cacert=/etc/etcd/etcd-ca.crt --cert=/etc/etcd/client.crt --key=/etc/etcd/client.key endpoint status --write-out=table
+
