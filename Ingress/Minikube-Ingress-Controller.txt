@@ -1,0 +1,127 @@
+##########Set up Ingress on Minikube with the NGINX Ingress Controller
+
+# Firstly Minikube Installation on RHEL
+
+# Prerequisite
+# Install Docker as driver for minikube
+REF: https://docs.docker.com/engine/install/rhel/
+
+sudo dnf -y install dnf-plugins-core curl
+sudo dnf config-manager --add-repo https://download.docker.com/linux/rhel/docker-ce.repo
+sudo dnf install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+
+sudo systemctl enable --now docker
+sudo systemctl status docker
+ 
+# Minikube
+REF: https://minikube.sigs.k8s.io/docs/start/?arch=%2Flinux%2Fx86-64%2Fstable%2Fbinary+download
+
+curl -LO https://github.com/kubernetes/minikube/releases/latest/download/minikube-linux-amd64
+sudo install minikube-linux-amd64 /usr/local/bin/minikube && rm -f minikube-linux-amd64
+
+# Permission to existing user 
+sudo usermod -aG docker $USER && newgrp docker
+
+# Start minikube 
+minikube start --driver=docker
+
+# to check status 
+minikube status 
+
+# to stop minikube
+minikube stop
+
+
+# Install kubectl 
+curl -LO "https://dl.k8s.io/release/$(curl -Ls https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+chmod +x kubectl
+sudo mv kubectl /usr/local/bin/
+kubectl version --client
+
+
+# Enable the Ingress controller 
+
+#To enable the NGINX Ingress controller, run the following command:
+minikube addons enable ingress
+
+# Verify that the NGINX Ingress controller is running
+kubectl get pods -n ingress-nginx
+
+# Deploy a hello, world app
+# Create a Deployment using the following command:
+kubectl create deployment web --image=gcr.io/google-samples/hello-app:1.0
+# Verify that the Deployment is in a Ready state:
+kubectl get deployment web
+# Expose the Deployment:
+kubectl expose deployment web --type=NodePort --port=8080
+# Verify the Service is created and is available on a node port:
+kubectl get service web
+
+# Visit the Service via NodePort, using the minikube service command. Follow the instructions for your platform:
+
+minikube service web --url
+#The output is similar to:
+http://172.17.0.15:31637
+
+# Invoke the URL obtained in the output of the previous step:
+curl http://172.17.0.15:31637 
+
+
+# Create an Ingress
+# Create example-ingress.yaml from the following file:
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: example-ingress
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: hello-world.example
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: web
+                port:
+                  number: 8080
+
+kubectl create -f example-ingress.yaml
+
+# Verify the IP address is set:
+kubectl get ingress
+
+#Verify that the Ingress controller is directing traffic, by following the instructions for your platform:
+curl --resolve "hello-world.example:80:$( minikube ip )" -i http://hello-world.example
+
+
+# Create a second Deployment
+# Create another Deployment using the following command:
+kubectl create deployment web2 --image=gcr.io/google-samples/hello-app:2.0
+# Verify that the Deployment is in a Ready state:
+kubectl get deployment web2 
+# Expose the second Deployment:
+kubectl expose deployment web2 --port=8080 --type=NodePort
+
+
+# Edit the existing Ingress 
+# Edit the existing example-ingress.yaml manifest, and add the following lines at the end:
+
+- path: /v2
+  pathType: Prefix
+  backend:
+    service:
+      name: web2
+      port:
+        number: 8080
+
+# Apply the changes:
+kubectl apply -f example-ingress.yaml
+
+# Test your Ingress
+# Access the 1st version of the Hello World app.
+curl --resolve "hello-world.example:80:$( minikube ip )" -i http://hello-world.example
+
+# Access the 2nd version of the Hello World app.
+curl --resolve "hello-world.example:80:$( minikube ip )" -i http://hello-world.example/v2
