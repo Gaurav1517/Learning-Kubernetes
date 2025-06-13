@@ -1,3 +1,22 @@
+ Understanding the etcd 
+ There are the three primary security areas that we will be focussing on:
+  1- Plan Text Data Storage 
+  2- Transport Security with HTTPS
+  3- Authentication with HTTPS Certificates 
+
+  Overview of HTTPS
+  HTTPS is an extension of HTTPS
+   In HTTPS the communication is encrypted using Transport Layer Security ( TLS )
+  THe Protocol is therefore also often referred to a HTTPS over TLS or HTTPS over SSL 
+
+  Introduction to SSL/TLS 
+  SSL 2.0 1995
+  SSL 3.0 1996
+  TLS 1.0 1999
+  TLS 1.1 2006
+  TLS 1.2 2008
+  TLS 1.3 2018
+
 kubectl get nodes
 kubectl get pod -n kube-system
 
