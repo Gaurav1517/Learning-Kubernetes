@@ -1,0 +1,104 @@
+# Configure ETCD database securly with tls (CKS)
+
+mkdir /root/binaries
+cd binaries/
+dnf -y install curl wget vim
+ETCD_RELEASE=$(curl -s https://api.github.com/repos/etcd-io/etcd/releases/latest|grep tag_name | cut -d '"' -f 4)
+echo $ETCD_RELEASE
+wget https://github.com/etcd-io/etcd/releases/download/${ETCD_RELEASE}/etcd-${ETCD_RELEASE}-linux-amd64.tar.gz
+tar xvf etcd-${ETCD_RELEASE}-linux-amd64.tar.gz
+cd etcd-${ETCD_RELEASE}-linux-amd64
+mv etcd* /usr/local/bin
+ls /usr/local/bin
+etcd
+
+
+
+mkdir /root/certificates
+cd /root/certificates
+openssl genrsa -out ca.key 2048
+openssl req -new -key ca.key -subj "/CN=KUBERNETES-CA" -out ca.csr
+openssl x509 -req -in ca.csr -signkey ca.key -CAcreateserial  -out ca.crt -days 1000
+rm -rf ca.csr
+
+
+dnf -y install tcpdump net-tools
+tcpdump -i lo -X  port 2379
+etcdctl put course "cks"
+etcdctl get course
+
+cd certificates/
+openssl genrsa -out etcd.key 2048
+cat etcd.key
+dnf install net-tools
+
+cat > etcd.cnf <<EOF
+[req]
+req_extensions = v3_req
+distinguished_name = req_distinguished_name
+[req_distinguished_name]
+[ v3_req ]
+basicConstraints = CA:FALSE
+keyUsage = nonRepudiation, digitalSignature, keyEncipherment
+subjectAltName = @alt_names
+[alt_names]
+IP.1 = [IP-1]
+IP.2 = 127.0.0.1
+EOF
+
+openssl req -new -key etcd.key -subj "/CN=etcd" -out etcd.csr -config etcd.cnf
+ls
+openssl x509 -req -in etcd.csr -CA ca.crt -CAkey ca.key -CAcreateserial -out etcd.crt -extensions v3_req -extfile etcd.cnf -days 1000
+ls
+etcdctl put course "india"
+etcd --cert-file=/root/certificates/etcd.crt --key-file=/root/certificates/etcd.key --advertise-client-urls=https://127.0.0.1:2379 --listen-client-urls=https://127.0.0.1:2379
+etcdctl put course "india"
+tcpdump -i lo -X  port 2379
+ETCDCTL_API=3 etcdctl --endpoints=https://127.0.0.1:2379 --insecure-skip-tls-verify  --insecure-transport=false put course "sanjay dahiya"
+ETCDCTL_API=3 etcdctl --endpoints=https://127.0.0.1:2379 --insecure-skip-tls-verify  --insecure-transport=false get course "sanjay dahiya
+
+
+
+Clinet Authentication In ETCD
+cd /root/certificates
+openssl genrsa -out client.key 2048
+openssl req -new -key client.key -subj "/CN=client" -out client.csr
+openssl x509 -req -in client.csr -CA ca.crt -CAkey ca.key -CAcreateserial -out client.crt -extensions v3_req  -days 1000
+etcd --cert-file=/root/certificates/etcd.crt --key-file=/root/certificates/etcd.key --advertise-client-urls=https://127.0.0.1:2379 --client-cert-auth --trusted-ca-file=/root/certificates/ca.crt  --listen-client-urls=https://127.0.0.1:2379
+ETCDCTL_API=3 etcdctl --endpoints=https://127.0.0.1:2379 --insecure-skip-tls-verify  --insecure-transport=false --cert /root/certificates/client.crt --key /root/certificates/client.key put course "welcome to india"
+ETCDCTL_API=3 etcdctl --endpoints=https://127.0.0.1:2379 --insecure-skip-tls-verify  --insecure-transport=false --cert /root/certificates/client.crt --key /root/certificates/client.key get course "welcome to india"
+
+Integrating Systemd with ETCD 
+mkdir /var/lib/etcd
+chmod 700 /var/lib/etcd
+cat <<EOF | sudo tee /etc/systemd/system/etcd.service
+[Unit]
+Description=etcd
+Documentation=https://github.com/coreos
+
+[Service]
+ExecStart=/usr/local/bin/etcd \\
+  --cert-file=/root/certificates/etcd.crt \\
+  --key-file=/root/certificates/etcd.key \\
+  --trusted-ca-file=/root/certificates/ca.crt \\
+  --client-cert-auth \\
+  --listen-client-urls https://127.0.0.1:2379 \\
+  --advertise-client-urls https://127.0.0.1:2379 \\
+  --data-dir=/var/lib/etcd
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reload
+systemctl start etcd.service
+systemctl enable etcd.service
+ausearch -c '(etcd)' --raw | audit2allow -M my-etcd
+semodule -X 300 -i my-etcd.pp
+restorecon -Rv /usr/local/bin/etcd
+systemctl restart etcd
+systemctl status etcd
+
+
